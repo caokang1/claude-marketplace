@@ -1,126 +1,24 @@
-# 测试用例
-
-本文档包含 jenkins-deploy 技能的完整测试用例。
-
-## 重要参数说明
-
-**featureNo / envNo 参数规则**：
-- 有效值：1-100 的数字
-- 当项目有这些参数时为必填
-- 不仅限于 FeatureTest 后缀项目，Own、Module 等后缀也可能有
-- 以实际查询到的项目参数为准
-
----
-
-## FeatureTest 项目测试用例
-
-### PcFeatureTest
-
-| 用例 | 命令 | 预期结果 |
-|------|------|----------|
-| 正确参数 | `--validate --params '{"repoTag":"pc-t2025.53.19","featureNo":"70"}'` | ✓ 通过 |
-| 缺少 featureNo | `--validate --params '{"repoTag":"pc-t2025.53.19"}'` | ✗ 失败 |
-| featureNo=101 | `--validate --params '{"repoTag":"pc-t2025.53.19","featureNo":"101"}'` | ✗ 超出范围 |
-| featureNo=0 | `--validate --params '{"repoTag":"pc-t2025.53.19","featureNo":"0"}'` | ✗ 超出范围 |
-| featureNo=abc | `--validate --params '{"repoTag":"pc-t2025.53.19","featureNo":"abc"}'` | ✗ 非数字 |
-| 模拟运行 | `--dry-run --params '{"repoTag":"pc-t2025.53.19","featureNo":"70"}'` | 显示 JSON |
-
-### socialPcModuleFeatureTest
-
-| 用例 | 命令 | 预期结果 |
-|------|------|----------|
-| 正确参数 | `--validate --params '{"repoTag":"social-t2025.53.19","envNo":"1"}'` | ✓ 通过 |
-| 缺少 envNo | `--validate --params '{"repoTag":"social-t2025.53.19"}'` | ✗ 失败 |
-| envNo=0 | `--validate --params '{"repoTag":"social-t2025.53.19","envNo":"0"}'` | ✗ 超出范围 |
-| envNo=100 | `--validate --params '{"repoTag":"social-t2025.53.19","envNo":"100"}'` | ✓ 边界值通过 |
-| 模拟运行 | `--dry-run --params '{"repoTag":"social-t2025.53.19","envNo":"1"}'` | 显示 JSON |
-
-### staticPrintFeatureTest
-
-| 用例 | 命令 | 预期结果 |
-|------|------|----------|
-| 正确参数 | `--validate --params '{"repoTag":"print-t2025.53.19","envNo":"50"}'` | ✓ 通过 |
-| 缺少 envNo | `--validate --params '{"repoTag":"print-t2025.53.19"}'` | ✗ 失败 |
-| 模拟运行 | `--dry-run --params '{"repoTag":"print-t2025.53.19","envNo":"50"}'` | 显示 JSON |
-
----
-
-## 开发环境项目测试用例
-
-### staticPcOwn
-
-| 用例 | 命令 | 预期结果 |
-|------|------|----------|
-| 正确参数 | `--validate --params '{"repoBranch":"hotfix/xxx-1167459320001118371","featureNo":"50"}'` | ✓ 通过 |
-| 缺少 featureNo | `--validate --params '{"repoBranch":"hotfix/xxx-1167459320001118371"}'` | ✗ 失败 |
-| featureNo 超出范围 | `--validate --params '{"repoBranch":"hotfix/xxx","featureNo":"101"}'` | ✗ 超出范围 |
-| 模拟运行 | `--dry-run --params '{"repoBranch":"hotfix/xxx-1167459320001118371","featureNo":"50"}'` | 显示 JSON |
-
----
-
-## 微前端项目测试用例
-
-### static-mf-order-cloud
-
-| 用例 | 命令 | 预期结果 |
-|------|------|----------|
-| 正确参数 | `--validate --params '{"repoBranch":"develop"}'` | ✓ 通过 |
-| 缺少 repoBranch | `--validate --params '{}'` | ✗ 失败 |
-| 模拟运行 | `--dry-run --params '{"repoBranch":"develop","deployZone":"primary"}'` | 显示 JSON |
-
-### static-mf-deepseek
-
-| 用例 | 命令 | 预期结果 |
-|------|------|----------|
-| 正确参数 | `--validate --params '{"repoTag":"pc-f2026.05.48"}'` | ✓ 通过 |
-| 缺少 repoTag | `--validate --params '{}'` | ✗ 失败 |
-| 模拟运行 | `--dry-run --params '{"repoTag":"pc-f2026.05.48"}'` | 显示 JSON |
-
----
-
-## 基础功能测试
-
-| 检查项 | 命令 | 预期结果 |
-|--------|------|----------|
-| 项目列表 | `--list` | 显示相关项目 |
-| 全部项目 | `--list --all` | 显示所有项目 |
-| 停止构建 | `--stop <build_number>` | 成功停止 |
-| 缓存刷新 | `--list --refresh` | 缓存时间更新 |
-
----
-
-## 运行测试
-
-### 快速测试（不触发构建）
+# 测试
 
 ```bash
-# 1. 验证参数
-python scripts/jenkins_deploy.py \
-  PcFeatureTest \
-  --validate \
-  --params '{"repoTag":"pc-t2025.53.19","featureNo":"70"}'
-
-# 2. 模拟运行
-python scripts/jenkins_deploy.py \
-  PcFeatureTest \
-  --dry-run \
-  --params '{"repoTag":"pc-t2025.53.19","featureNo":"70"}'
+python3 scripts/run_tests.py
 ```
 
-### 完整测试（触发构建）
+测试会在本机启动一个模拟 Jenkins，并建一个带本地远端的临时 Git 仓库，不连接任何真实服务器，也不需要账号。覆盖以下内容：
+
+| 类别 | 用例 |
+|---|---|
+| 配置 | 缺少凭据时提示配置方法；默认拒绝明文 HTTP；凭据错误时给出 HTTP 401 提示 |
+| 任务列表 | 按当前仓库筛选；`--all` 列出全部并跳过多分支流水线；缓存写在用户缓存目录且权限为 700 |
+| 参数 | 分支参数用当前分支；只读参数不提交；选项值不合法、参数名拼错、修改只读参数都会报错 |
+| 确认码 | 确认码不一致、参数改动、切换分支、远端分支有新提交时都拒绝触发；本地多了未推送的提交但远端没变时确认码仍有效 |
+| 触发与监控 | 提交的参数与确认时相同；按队列 ID 找到构建并监控到成功；停止构建必须指定任务 |
+| Git 检查 | 分支或标签未推送时报错；本地有未推送提交时警告；标签参数取当前提交上的标签 |
+| 安全 | 非交互环境不能走交互式触发，只能用 dry-run 加确认码 |
+
+接入真实 Jenkins 后，可以先只做查询，确认任务匹配和参数推断都正确：
 
 ```bash
-# 1. 触发构建
-python scripts/jenkins_deploy.py \
-  PcFeatureTest \
-  --trigger-only-no-monitor \
-  --yes \
-  --params '{"repoTag":"pc-t2025.53.19","featureNo":"70"}'
-
-# 2. 启动监控（使用返回的 queue_id）
-python scripts/jenkins_deploy.py \
-  --monitor-only \
-  --full-name abc-his/test/PcFeatureTest \
-  --queue-id <queue_id> \
-  --display-name PcFeatureTest
+python3 scripts/jenkins_deploy.py --list
+python3 scripts/jenkins_deploy.py <任务> --dry-run
 ```

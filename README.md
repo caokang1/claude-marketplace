@@ -163,30 +163,26 @@ source ~/.zshrc
 
 ### jenkins-deploy
 
-ABC Jenkins 项目发布技能，支持智能参数推断和交互式触发 Jenkins 构建。
+触发 Jenkins 参数化任务的构建：按当前 Git 仓库找到对应任务，用当前分支 / 标签推断参数，展示给你确认后才触发，并在后台监控结果。
 
 **安装**：
 ```bash
-npx skills add https://github.com/ABCFed/claude-marketplace/tree/main/skills/jenkins-deploy
+npx skills add https://github.com/caokang1/claude-marketplace/tree/main/skills/jenkins-deploy
 ```
 
-**准备**：
-```bash
-# 编辑 ~/.zshrc 或 ~/.bashrc
-export JENKINS_USER="your_jenkins_username"
-export JENKINS_TOKEN="your_jenkins_api_token"
-source ~/.zshrc
+**准备**：在 `~/.config/jenkins-deploy/config.json` 写入 Jenkins 地址和凭据，并 `chmod 600`：
+```json
+{"url": "https://jenkins.example.com", "user": "<用户名>", "token": "<API Token>"}
 ```
 
-**触发关键词**：Jenkins、发布、部署、构建、Deploy、Build、CI/CD
+**触发关键词**：需要明确提到 Jenkins，例如"用 Jenkins 发一下""触发 Jenkins 构建"
 
 **功能特性**：
-- 智能参数推断 - 自动解析分支名、标签、TAPD ID
-- 两阶段部署 - 触发构建后返回 JSON，支持后台监控
-- 实时状态监控 - 构建进度可视化，完成后发送通知
-- 项目过滤 - 根据 Git 仓库自动过滤相关项目
-- 缓存机制 - 项目列表缓存，提高响应速度
-
+- 不内置任何服务器地址，默认拒绝明文 HTTP
+- 参数推断：分支参数用当前分支，标签参数只用指向当前提交的标签
+- 确认码：触发的任务、参数、远端提交必须与确认时完全一致
+- 后台监控：按队列 ID 精确找到构建，结束监控不会停止构建
+- 自带离线测试：`python3 scripts/run_tests.py`
 ---
 
 ### git-flow
@@ -316,7 +312,7 @@ npx skills add https://github.com/ABCFed/claude-marketplace/tree/main/skills/tap
 ├── .claude-plugin/
 │   └── marketplace.json          # 市场配置
 ├── skills/                       # 独立技能
-│   ├── jenkins-deploy/           # Jenkins 发布技能
+│   ├── jenkins-deploy/           # Jenkins 发布技能（已脱敏，通用）
 │   ├── git-flow/                 # Git Flow 工作流助手
 │   ├── tapd/                     # TAPD 集成（从 plugins 迁移）
 │   ├── abc-apifox/               # ABC API 文档查询 V2
