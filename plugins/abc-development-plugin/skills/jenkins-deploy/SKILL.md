@@ -5,7 +5,13 @@ description: 触发 Jenkins 参数化任务的构建：按当前 Git 仓库找�
 
 # Jenkins 发布
 
-脚本：`scripts/jenkins_deploy.py`（下文写作 `jd`），在业务项目的 Git 仓库目录下执行，依赖 Python 3.8+ 和 `requests`。
+脚本：本文件同级的 `scripts/jenkins_deploy.py`（下文写作 `jd`；项目级安装时路径是 `.claude/skills/jenkins-deploy/scripts/jenkins_deploy.py`），在业务项目的 Git 仓库根目录下执行，只依赖 Python 3.8+ 标准库。
+
+## 一条命令发布
+
+用户输入 `/jenkins-deploy [任务] [参数=值 ...]`，例如 `/jenkins-deploy`、`/jenkins-deploy team/svc-dev deployEnv=test`，就直接按下面的「流程」跑完：找任务 → 模拟运行 → 请用户确认 → 触发 → 后台监控。
+- 中间**只停一次**，等用户确认。
+- 命令里的 `参数=值` 合并成 JSON 放进 `--params`。
 
 **每次触发都必须经过用户确认。**构建可能直接部署到环境，所以确认码机制保证触发的任务、参数、提交和用户看到的完全一致。
 
@@ -33,9 +39,11 @@ Jenkins 地址和凭据只来自用户自己的配置，脚本里没有内置任
 
 ## 流程
 
-1. **找任务**：`python3 jd --list` 列出与当前仓库相关的任务。
-   - 任务要有仓库地址参数（如 `repoUrl`）才能按仓库匹配。匹配不到就用 `--list --all`，让用户指定。
-   - 多个任务匹配时，问用户选哪个，不要猜。
+1. **找任务**：按这个顺序确定任务，确定了就直接进入第 2 步。
+   - 命令里指定的任务。
+   - 仓库根目录 `.jenkins-deploy.json` 里的 `{"job": "<任务完整路径>"}`。这个文件团队共用，可以提交；dry-run 不带任务名时会自动读取它。
+   - 都没有时，运行 `python3 jd --list` 按仓库地址匹配：只有一个就用它；有多个就问用户选哪个，不要猜；一个都没有就用 `--list --all` 列出来让用户指定。
+   - 用户确认任务后，建议把它写进 `.jenkins-deploy.json`，以后不用再选。
 2. **模拟运行**：`python3 jd <任务> --dry-run [--params '<JSON>']`。
    - 分支参数（`repoBranch` / `BRANCH` / `GIT_BRANCH` 等）自动填当前分支。
    - 标签参数自动填**当前提交上**的标签。
@@ -62,3 +70,6 @@ Jenkins 地址和凭据只来自用户自己的配置，脚本里没有内置任
 - 为了让构建包含本地改动，自己 commit、push 或打标签。
 - 构建失败后自动重试，或者主动停止构建。
 - 把 Token 写进项目文件、命令行参数或回复里。
+
+---
+改编自 [ABCFed/claude-marketplace](https://github.com/ABCFed/claude-marketplace) 的 jenkins-deploy（MIT License），已去除其内部配置并重写了安全相关逻辑。

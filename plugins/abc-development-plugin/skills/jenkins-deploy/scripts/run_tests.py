@@ -217,6 +217,17 @@ def main() -> int:
     check('标签参数取当前提交上的标签，并显示对应提交',
           rc == 0 and 'repoTag = v1.0.0' in out and 'v1.0.0 @' in out and 'feature/x @' in out, out)
 
+    (repo / '.jenkins-deploy.json').write_text('{"job": "team/svc-dev"}')
+    rc, out = run('--dry-run')
+    check('不指定任务时使用仓库根目录 .jenkins-deploy.json 里的任务', rc == 0 and '任务:   team/svc-dev' in out, out)
+    (repo / '.jenkins-deploy.json').unlink()
+
+    fake = tmp / 'no-requests'
+    fake.mkdir()
+    (fake / 'requests.py').write_text('raise ImportError("requests should not be used")')
+    rc, out = run('svc-dev', '--dry-run', env={'PYTHONPATH': str(fake)})
+    check('只依赖标准库（屏蔽 requests 后仍可运行）', rc == 0 and '确认码' in out, out)
+
     rc, out = run('svc-dev')
     check('非交互环境不能走交互式触发', rc == 1 and '--dry-run' in out, out)
 

@@ -182,6 +182,7 @@ npx skills add https://github.com/caokang1/claude-marketplace/tree/main/skills/j
 - 参数推断：分支参数用当前分支，标签参数只用指向当前提交的标签
 - 确认码：触发的任务、参数、远端提交必须与确认时完全一致
 - 后台监控：按队列 ID 精确找到构建，结束监控不会停止构建
+- 只依赖 Python 标准库；仓库根目录 `.jenkins-deploy.json` 可固定默认任务
 - 自带离线测试：`python3 scripts/run_tests.py`
 ---
 

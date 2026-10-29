@@ -7,9 +7,13 @@ Jenkins 发布脚本
 先模拟运行给人确认，确认码一致后才触发构建，并可后台监控构建结果。
 
 Jenkins 地址和凭据只来自环境变量或用户自己的配置文件，脚本里不内置任何服务器地址。
+只依赖 Python 3.8+ 标准库。
+
+改编自 ABCFed/claude-marketplace 的 jenkins-deploy（MIT License）。
 """
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -20,9 +24,9 @@ import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import quote
-
-import requests
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlencode
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 # ============================================================================
@@ -32,6 +36,7 @@ import requests
 CONFIG_FILE = Path(os.environ.get(
     'JENKINS_DEPLOY_CONFIG', Path.home() / '.config' / 'jenkins-deploy' / 'config.json'))
 CACHE_DIR = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'jenkins-deploy'
+PROJECT_FILE = '.jenkins-deploy.json'   # 仓库根目录的项目配置：{"job": "team/svc-dev"}
 CACHE_TTL = 24 * 3600          # 任务列表缓存 24 小时
 MAX_FOLDER_DEPTH = 4           # 递归扫描 Jenkins 文件夹的最大深度
 
@@ -141,8 +146,45 @@ def job_url(cfg: Config, full_name: str) -> str:
     return cfg.url + ''.join(f"job/{quote(part, safe='')}/" for part in full_name.split('/'))
 
 
-def jenkins_get(cfg: Config, url: str, **params) -> requests.Response:
-    response = requests.get(url, auth=cfg.auth, params=params or None, timeout=15)
+class Response:
+    def __init__(self, status_code: int, headers, body: bytes):
+        self.status_code = status_code
+        self.headers = headers
+        self.text = body.decode('utf-8', errors='replace')
+
+    def json(self):
+        return json.loads(self.text)
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None  # 不跟随跳转：带凭据的请求只发给配置的 Jenkins 地址
+
+
+_opener = build_opener(_NoRedirect)
+
+
+def http(cfg: Config, method: str, url: str, params: Optional[Dict] = None,
+         data: Optional[Dict] = None, timeout: int = 15) -> Response:
+    if params:
+        url += '?' + urlencode(params)
+    body = urlencode(data or {}).encode('utf-8') if method == 'POST' else None
+    request = Request(url, data=body, method=method)
+    token = base64.b64encode(f"{cfg.auth[0]}:{cfg.auth[1]}".encode('utf-8')).decode('ascii')
+    request.add_header('Authorization', f'Basic {token}')
+    if body is not None:
+        request.add_header('Content-Type', 'application/x-www-form-urlencoded')
+    try:
+        with _opener.open(request, timeout=timeout) as resp:
+            return Response(resp.status, resp.headers, resp.read())
+    except HTTPError as e:
+        return Response(e.code, e.headers, e.read() or b'')
+    except (URLError, OSError) as e:
+        raise DeployError(f"连接 Jenkins 失败: {getattr(e, 'reason', e)}")
+
+
+def jenkins_get(cfg: Config, url: str, **params) -> Response:
+    response = http(cfg, 'GET', url, params=params)
     if response.status_code in (401, 403):
         raise DeployError(f"Jenkins 拒绝访问 (HTTP {response.status_code})，请检查用户名和 API Token")
     return response
@@ -170,6 +212,18 @@ def get_git_info() -> Dict[str, str]:
         'remote_url': run_git(['remote', 'get-url', remote]),
         'dirty': run_git(['status', '--porcelain']),
     }
+
+
+def project_default_job() -> str:
+    """仓库根目录 .jenkins-deploy.json 里的默认任务，团队共用，可以提交"""
+    root = run_git(['rev-parse', '--show-toplevel'])
+    path = Path(root) / PROJECT_FILE if root else None
+    if not path or not path.exists():
+        return ''
+    try:
+        return str(json.loads(path.read_text(encoding='utf-8')).get('job', '')).strip()
+    except (OSError, json.JSONDecodeError) as e:
+        raise DeployError(f"读取 {path} 失败: {e}")
 
 
 def normalize_remote(url: str) -> str:
@@ -247,7 +301,9 @@ def fetch_projects_from_jenkins(cfg: Config) -> List[Dict]:
             response = jenkins_get(cfg, job_url(cfg, full_name) + 'api/json', tree=tree)
             if response.status_code == 200:
                 projects.append(parse_job_config(response.json()))
-        except requests.RequestException:
+        except (DeployError, json.JSONDecodeError) as e:
+            if 'HTTP 401' in str(e) or 'HTTP 403' in str(e):
+                raise
             continue
     return projects
 
@@ -401,9 +457,8 @@ def print_plan(cfg: Config, project: Dict, params: Dict[str, str], revisions: Di
 def trigger_build(cfg: Config, project: Dict, params: Dict[str, str]) -> int:
     """触发构建，返回队列 ID"""
     endpoint = 'buildWithParameters' if project['parameters'] else 'build'
-    response = requests.post(job_url(cfg, project['full_name']) + endpoint,
-                             auth=cfg.auth, data=params, timeout=30, allow_redirects=False)
-    match = re.search(r'/queue/item/(\d+)', response.headers.get('Location', ''))
+    response = http(cfg, 'POST', job_url(cfg, project['full_name']) + endpoint, data=params, timeout=30)
+    match = re.search(r'/queue/item/(\d+)', response.headers.get('Location') or '')
     if response.status_code in (200, 201, 302) and match:
         return int(match.group(1))
     raise DeployError(f"触发构建失败 (HTTP {response.status_code}): {response.text[:300]}")
@@ -472,7 +527,7 @@ def monitor_build(cfg: Config, project: Dict, queue_id: int, timeout: int = 3600
 
 def stop_build(cfg: Config, full_name: str, build_number: int) -> None:
     url = f"{job_url(cfg, full_name)}{build_number}/stop"
-    response = requests.post(url, auth=cfg.auth, timeout=15, allow_redirects=False)
+    response = http(cfg, 'POST', url)
     if response.status_code not in (200, 302):
         raise DeployError(f"停止构建失败 (HTTP {response.status_code})")
     print(f"✓ 已发送停止请求: {full_name} #{build_number}")
@@ -557,11 +612,15 @@ def main() -> None:
             print(f"  - {p['full_name']}")
         return
 
-    if not args.project:
+    default_job = project_default_job()
+    if not args.project and default_job:
+        project = find_project(projects, default_job)
+    elif not args.project:
         related = filter_projects_by_git(projects, git_info['remote_url'])
         if len(related) != 1:
             names = ', '.join(p['full_name'] for p in related) or '无'
-            raise DeployError(f"请指定任务名。与当前仓库相关的任务: {names}")
+            raise DeployError(f"请指定任务名，或在仓库根目录的 {PROJECT_FILE} 里写 {{\"job\": \"<任务路径>\"}}。"
+                              f"与当前仓库相关的任务: {names}")
         project = related[0]
     else:
         project = find_project(projects, args.project)
@@ -607,9 +666,6 @@ if __name__ == '__main__':
         main()
     except DeployError as e:
         print_colored(f"✗ {e}", 'red')
-        sys.exit(1)
-    except requests.RequestException as e:
-        print_colored(f"✗ 连接 Jenkins 失败: {e}", 'red')
         sys.exit(1)
     except KeyboardInterrupt:
         print("\n已取消")
